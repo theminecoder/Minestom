@@ -18,8 +18,8 @@ public class ServerProcessTest {
 
         AtomicReference<ServerProcess> process = new AtomicReference<>();
         assertDoesNotThrow(() -> process.set(MinecraftServer.updateProcess()));
-        assertDoesNotThrow(() -> process.get().start(new InetSocketAddress("localhost", 25565)));
-        assertThrows(Exception.class, () -> process.get().start(new InetSocketAddress("localhost", 25566)));
+        assertDoesNotThrow(() -> process.get().start(new InetSocketAddress("localhost", 0)));
+        assertThrows(Exception.class, () -> process.get().start(new InetSocketAddress("localhost", 0)));
         assertDoesNotThrow(() -> process.get().stop());
     }
 
@@ -29,7 +29,7 @@ public class ServerProcessTest {
         assumeTrue(System.getenv("GITHUB_ACTIONS") == null);
 
         var process = MinecraftServer.updateProcess();
-        process.start(new InetSocketAddress("localhost", 25565));
+        process.start(new InetSocketAddress("localhost", 0));
         var ticker = process.ticker();
         assertDoesNotThrow(() -> ticker.tick(System.nanoTime()));
         assertDoesNotThrow(process::stop);

@@ -15,7 +15,7 @@ import net.minestom.server.network.packet.PacketWriting;
 import net.minestom.server.network.packet.server.BufferedPacket;
 import net.minestom.server.network.packet.server.ServerPacket;
 import net.minestom.server.network.player.PlayerConnection;
-import net.minestom.server.network.player.PlayerSocketConnection;
+import net.minestom.server.network.player.BufferedPacketSender;
 import org.jetbrains.annotations.ApiStatus;
 import org.jetbrains.annotations.Nullable;
 
@@ -125,8 +125,8 @@ public final class PacketViewableUtils {
         }
 
         private static void writeTo(PlayerConnection connection, NetworkBuffer buffer, long offset, long length) {
-            if (connection instanceof PlayerSocketConnection socketConnection) {
-                socketConnection.sendPacket(new BufferedPacket(buffer, offset, length));
+            if (connection instanceof BufferedPacketSender bufferedPacketSender) {
+                bufferedPacketSender.sendBufferedPacket(buffer, offset, length);
                 return;
             }
             // TODO for non-socket connection

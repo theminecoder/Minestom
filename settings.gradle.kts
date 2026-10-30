@@ -4,6 +4,8 @@ includeBuild("build-src")
 
 include("code-generators")
 include("testing")
+include("protocol-java")
+include("protocol-bedrock")
 
 include("jmh-benchmarks")
 include("jcstress-tests")

@@ -16,7 +16,9 @@ import net.minestom.server.monitoring.BenchmarkManager;
 import net.minestom.server.network.ConnectionManager;
 import net.minestom.server.network.packet.PacketParser;
 import net.minestom.server.network.packet.client.ClientPacket;
-import net.minestom.server.network.socket.Server;
+import net.minestom.server.network.protocol.ProtocolFamily;
+import net.minestom.server.network.protocol.ServerTransport;
+import net.minestom.server.network.protocol.TransportManager;
 import net.minestom.server.recipe.RecipeManager;
 import net.minestom.server.registry.Registries;
 import net.minestom.server.scoreboard.TeamManager;
@@ -24,6 +26,7 @@ import net.minestom.server.snapshot.Snapshotable;
 import net.minestom.server.thread.ThreadDispatcher;
 import net.minestom.server.timer.SchedulerManager;
 import org.jetbrains.annotations.ApiStatus;
+import org.jetbrains.annotations.Nullable;
 
 import java.net.SocketAddress;
 
@@ -104,9 +107,15 @@ public interface ServerProcess extends Registries, Snapshotable {
     PacketParser<ClientPacket> packetParser();
 
     /**
-     * Exposed socket server.
+     * Exposed transport for the primary protocol family.
+     * <p>May be {@code null} before a transport has been started.</p>
      */
-    Server server();
+    @Nullable ServerTransport server();
+
+    /**
+     * All protocol transports owned by this process.
+     */
+    TransportManager transports();
 
     /**
      * Dispatcher for tickable game objects.
@@ -124,6 +133,11 @@ public interface ServerProcess extends Registries, Snapshotable {
     ClickCallbackManager clickCallbackManager();
 
     void start(SocketAddress socketAddress);
+
+    /**
+     * Starts a transport for the given protocol family.
+     */
+    void start(ProtocolFamily family, SocketAddress socketAddress);
 
     void stop();
 

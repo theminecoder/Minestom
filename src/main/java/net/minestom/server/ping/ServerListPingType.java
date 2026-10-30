@@ -7,6 +7,7 @@ import net.minestom.server.MinecraftServer;
 import net.minestom.server.codec.Transcoder;
 import net.minestom.server.event.server.ServerListPingEvent;
 import net.minestom.server.extras.lan.OpenToLAN;
+import net.minestom.server.network.protocol.ServerTransport;
 
 import java.util.function.Function;
 
@@ -73,7 +74,9 @@ public enum ServerListPingType {
      * @see OpenToLAN
      */
     public static String getOpenToLANPing(Status status) {
-        return String.format(LAN_PING_FORMAT, SECTION.serialize(status.description()), MinecraftServer.getServer().getPort());
+        final ServerTransport server = MinecraftServer.getServer();
+        final int port = server != null ? server.getPort() : 0;
+        return String.format(LAN_PING_FORMAT, SECTION.serialize(status.description()), port);
     }
 
     /**

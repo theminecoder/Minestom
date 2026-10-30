@@ -6,6 +6,8 @@ plugins {
 
 dependencies {
     implementation(rootProject)
+    implementation(project(":protocol-java"))
+    implementation(project(":protocol-bedrock"))
 
     runtimeOnly(libs.bundles.logback)
 }

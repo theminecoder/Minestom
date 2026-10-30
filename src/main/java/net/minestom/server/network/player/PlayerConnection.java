@@ -20,6 +20,10 @@ import net.minestom.server.network.packet.server.common.TransferPacket;
 import net.minestom.server.network.packet.server.configuration.SelectKnownPacksPacket;
 import net.minestom.server.network.packet.server.login.LoginDisconnectPacket;
 import net.minestom.server.network.plugin.LoginPluginMessageProcessor;
+import net.minestom.server.network.protocol.ProtocolFamily;
+import net.minestom.server.network.protocol.ProtocolFeature;
+import net.minestom.server.network.protocol.ProtocolVersion;
+import net.minestom.server.network.protocol.ServerTransport;
 import net.minestom.server.utils.validate.Check;
 import org.jetbrains.annotations.ApiStatus;
 import org.jetbrains.annotations.Nullable;
@@ -103,7 +107,39 @@ public abstract class PlayerConnection {
      * @return the protocol version
      */
     public int getProtocolVersion() {
-        return MinecraftServer.PROTOCOL_VERSION;
+        return MinecraftServer.protocolVersion();
+    }
+
+    /**
+     * Gets the protocol family spoken by this connection.
+     * <p>Protocol modules override this to report their edition.</p>
+     *
+     * @return the protocol family
+     */
+    public ProtocolFamily getProtocolFamily() {
+        return ProtocolFamily.JAVA;
+    }
+
+    /**
+     * Gets the full protocol descriptor for this connection.
+     * <p>This includes the protocol family, numeric version, Minecraft version and the
+     * version-specific feature set. Subclasses should override this method to expose
+     * accurate version-specific information.</p>
+     *
+     * @return the protocol descriptor
+     */
+    public ProtocolVersion getProtocol() {
+        return new ProtocolVersion(getProtocolFamily(), getProtocolVersion(), MinecraftServer.versionName());
+    }
+
+    /**
+     * Returns whether this connection's protocol supports the given feature.
+     *
+     * @param feature the feature to check
+     * @return true if the feature is supported
+     */
+    public boolean supportsProtocolFeature(ProtocolFeature feature) {
+        return getProtocol().supports(feature);
     }
 
     /**
@@ -114,7 +150,8 @@ public abstract class PlayerConnection {
      * @return the server address used
      */
     public @Nullable String getServerAddress() {
-        return MinecraftServer.getServer().getAddress();
+        final ServerTransport server = MinecraftServer.getServer();
+        return server != null ? server.getAddress() : null;
     }
 
 
@@ -126,7 +163,8 @@ public abstract class PlayerConnection {
      * @return the server port used
      */
     public int getServerPort() {
-        return MinecraftServer.getServer().getPort();
+        final ServerTransport server = MinecraftServer.getServer();
+        return server != null ? server.getPort() : 0;
     }
 
 

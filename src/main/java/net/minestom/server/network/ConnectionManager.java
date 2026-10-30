@@ -20,9 +20,9 @@ import net.minestom.server.network.packet.server.configuration.SelectKnownPacksP
 import net.minestom.server.network.packet.server.configuration.UpdateEnabledFeaturesPacket;
 import net.minestom.server.network.packet.server.login.LoginSuccessPacket;
 import net.minestom.server.network.packet.server.play.StartConfigurationPacket;
+import net.minestom.server.network.player.CompressionConnection;
 import net.minestom.server.network.player.GameProfile;
 import net.minestom.server.network.player.PlayerConnection;
-import net.minestom.server.network.player.PlayerSocketConnection;
 import net.minestom.server.network.plugin.LoginPluginMessageProcessor;
 import net.minestom.server.registry.Registries;
 import net.minestom.server.registry.StaticProtocolObject;
@@ -193,9 +193,9 @@ public final class ConnectionManager {
     public GameProfile transitionLoginToConfig(PlayerConnection connection, GameProfile gameProfile) {
         assert ServerFlag.INSIDE_TEST || Thread.currentThread().isVirtual();
         // Compression
-        if (connection instanceof PlayerSocketConnection socketConnection) {
+        if (connection instanceof CompressionConnection compressionConnection) {
             final int threshold = MinecraftServer.getCompressionThreshold();
-            if (threshold > 0) socketConnection.startCompression();
+            if (threshold > 0) compressionConnection.startCompression();
         }
         // Call pre login event
         LoginPluginMessageProcessor pluginMessageProcessor = connection.loginPluginMessageProcessor();

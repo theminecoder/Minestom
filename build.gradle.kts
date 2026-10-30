@@ -115,4 +115,6 @@ nmcpAggregation {
 dependencies {
     nmcpAggregation(rootProject)
     nmcpAggregation(project(":testing"))
+    nmcpAggregation(project(":protocol-java"))
+    nmcpAggregation(project(":protocol-bedrock"))
 }

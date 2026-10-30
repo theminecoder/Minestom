@@ -1,4 +1,4 @@
-package net.minestom.server.network.player;
+package net.minestom.server.protocol.java;
 
 import net.minestom.server.MinecraftServer;
 import net.minestom.server.ServerFlag;
@@ -28,10 +28,15 @@ import net.minestom.server.network.packet.client.login.ClientLoginStartPacket;
 import net.minestom.server.network.packet.client.status.StatusRequestPacket;
 import net.minestom.server.network.packet.server.*;
 import net.minestom.server.network.packet.server.login.SetCompressionPacket;
+import net.minestom.server.network.player.GameProfile;
+import net.minestom.server.network.player.SocketPlayerConnection;
+import net.minestom.server.network.protocol.ProtocolFamily;
+import net.minestom.server.network.protocol.ProtocolVersion;
 import net.minestom.server.utils.collection.ConcurrentMessageQueues;
 import net.minestom.server.utils.validate.Check;
 import org.jctools.queues.MessagePassingQueue;
 import org.jetbrains.annotations.ApiStatus;
+import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 import javax.crypto.Cipher;
@@ -49,12 +54,14 @@ import java.util.concurrent.locks.LockSupport;
 import java.util.zip.DataFormatException;
 
 /**
- * Represents a socket connection.
+ * A Java Edition socket connection.
  * <p>
- * It is the implementation used for all network client.
+ * Everything in this class is specific to the Java Edition wire format: length-prefixed
+ * frames, zlib compression, AES/CFB8 encryption and the login/configuration/play state
+ * machine.
  */
 @ApiStatus.Internal
-public class PlayerSocketConnection extends PlayerConnection {
+public final class JavaPlayerConnection extends SocketPlayerConnection {
     private static final Set<Class<? extends ClientPacket>> IMMEDIATE_PROCESS_PACKETS = Set.of(
             ClientHandshakePacket.class, // First received packet
             ClientCookieResponsePacket.class,
@@ -98,12 +105,22 @@ public class PlayerSocketConnection extends PlayerConnection {
 
     private final ListenerHandle<PlayerPacketOutEvent> outgoing = EventDispatcher.getHandle(PlayerPacketOutEvent.class);
 
-    public PlayerSocketConnection(SocketChannel channel, SocketAddress remoteAddress, Thread readThread, Thread writeThread) {
+    public JavaPlayerConnection(SocketChannel channel, SocketAddress remoteAddress, Thread readThread, Thread writeThread) {
         super();
         this.channel = channel;
         this.remoteAddress = remoteAddress;
         this.writeThread = writeThread;
         this.readThread = readThread;
+    }
+
+    @Override
+    public @NotNull ProtocolFamily getProtocolFamily() {
+        return ProtocolFamily.JAVA;
+    }
+
+    @Override
+    public @NotNull ProtocolVersion getProtocol() {
+        return JavaProtocol.forClient(protocolVersion != 0 ? protocolVersion : JavaProtocol.VERSION.protocol());
     }
 
     public void read(PacketParser<ClientPacket> packetParser) throws IOException {
@@ -180,6 +197,7 @@ public class PlayerSocketConnection extends PlayerConnection {
      * @param secretKey the secret key to use in the encryption
      * @throws IllegalStateException if encryption is already enabled for this connection
      */
+    @Override
     public void setEncryptionKey(SecretKey secretKey) {
         Check.stateCondition(encryptionContext != null, "Encryption is already enabled!");
         this.encryptionContext = new EncryptionContext(MojangCrypt.getCipher(1, secretKey), MojangCrypt.getCipher(2, secretKey));
@@ -188,8 +206,9 @@ public class PlayerSocketConnection extends PlayerConnection {
     /**
      * Enables compression and add a new codec to the pipeline.
      *
-     * @throws IllegalStateException if encryption is already enabled for this connection
+     * @throws IllegalStateException if compression is already enabled for this connection
      */
+    @Override
     public void startCompression() {
         Check.stateCondition(compression(), "Compression is already enabled!");
         this.compressionStart = sentPacketCounter.get();
@@ -208,6 +227,11 @@ public class PlayerSocketConnection extends PlayerConnection {
     public void sendPackets(Collection<SendablePacket> packets) {
         for (SendablePacket packet : packets) this.packetQueue.relaxedOffer(packet);
         unlockWriteThread();
+    }
+
+    @Override
+    public void sendBufferedPacket(NetworkBuffer buffer, long offset, long length) {
+        sendPacket(new BufferedPacket(buffer, offset, length));
     }
 
     // Requires ServerFlag.FASTER_SOCKET_WRITES
@@ -230,7 +254,7 @@ public class PlayerSocketConnection extends PlayerConnection {
      *
      * @param remoteAddress the new connection remote address
      */
-    @ApiStatus.Internal
+    @Override
     public void setRemoteAddress(SocketAddress remoteAddress) {
         this.remoteAddress = remoteAddress;
     }
@@ -239,10 +263,12 @@ public class PlayerSocketConnection extends PlayerConnection {
         return channel;
     }
 
+    @Override
     public @Nullable GameProfile gameProfile() {
         return gameProfile;
     }
 
+    @Override
     public void UNSAFE_setProfile(GameProfile gameProfile) {
         this.gameProfile = gameProfile;
     }
@@ -254,6 +280,7 @@ public class PlayerSocketConnection extends PlayerConnection {
      *
      * @return the username given by the client, unchecked
      */
+    @Override
     public @Nullable String getLoginUsername() {
         return loginUsername;
     }
@@ -263,39 +290,21 @@ public class PlayerSocketConnection extends PlayerConnection {
      *
      * @param loginUsername the new login username field
      */
+    @Override
     public void UNSAFE_setLoginUsername(String loginUsername) {
         this.loginUsername = loginUsername;
     }
 
-    /**
-     * Gets the server address that the client used to connect.
-     * <p>
-     * WARNING: it is given by the client, it is possible for it to be wrong.
-     *
-     * @return the server address used
-     */
     @Override
     public @Nullable String getServerAddress() {
         return serverAddress;
     }
 
-    /**
-     * Gets the server port that the client used to connect.
-     * <p>
-     * WARNING: it is given by the client, it is possible for it to be wrong.
-     *
-     * @return the server port used
-     */
     @Override
     public int getServerPort() {
         return serverPort;
     }
 
-    /**
-     * Gets the protocol version of a client.
-     *
-     * @return protocol version of client.
-     */
     @Override
     public int getProtocolVersion() {
         return protocolVersion;
@@ -308,16 +317,19 @@ public class PlayerSocketConnection extends PlayerConnection {
      * @param serverPort      the server port which the client used
      * @param protocolVersion the protocol version which the client used
      */
+    @Override
     public void refreshServerInformation(@Nullable String serverAddress, int serverPort, int protocolVersion) {
         this.serverAddress = serverAddress;
         this.serverPort = serverPort;
         this.protocolVersion = protocolVersion;
     }
 
+    @Override
     public byte[] getNonce() {
         return nonce;
     }
 
+    @Override
     public void setNonce(byte[] nonce) {
         this.nonce = nonce;
     }
@@ -389,6 +401,7 @@ public class PlayerSocketConnection extends PlayerConnection {
                     final long length = bufferedPacket.length();
                     yield writeBuffer(buffer, rawBuffer, index, length);
                 }
+                default -> false;
             };
         } catch (IndexOutOfBoundsException exception) {
             buffer.writeIndex(start);

@@ -19,7 +19,7 @@ import net.minestom.server.network.packet.client.play.ClientConfigurationAckPack
 import net.minestom.server.network.packet.server.login.EncryptionRequestPacket;
 import net.minestom.server.network.player.GameProfile;
 import net.minestom.server.network.player.PlayerConnection;
-import net.minestom.server.network.player.PlayerSocketConnection;
+import net.minestom.server.network.player.SocketPlayerConnection;
 import net.minestom.server.network.plugin.LoginPlugin;
 import net.minestom.server.network.plugin.LoginPluginMessageProcessor;
 import net.minestom.server.utils.mojang.MojangUtils;
@@ -51,10 +51,10 @@ public final class LoginListener {
 
     public static void loginStartListener(ClientLoginStartPacket packet, PlayerConnection connection) {
         final Auth auth = MinecraftServer.process().auth();
-        final boolean isSocketConnection = connection instanceof PlayerSocketConnection;
+        final boolean isSocketConnection = connection instanceof SocketPlayerConnection;
         // Proxy support (only for socket clients) and cache the login username
         if (isSocketConnection) {
-            PlayerSocketConnection socketConnection = (PlayerSocketConnection) connection;
+            SocketPlayerConnection socketConnection = (SocketPlayerConnection) connection;
             socketConnection.UNSAFE_setLoginUsername(packet.username());
             // Velocity support
             if (auth instanceof Auth.Velocity) {
@@ -70,7 +70,7 @@ public final class LoginListener {
                 connection.kick(ALREADY_CONNECTED);
                 return;
             }
-            final PlayerSocketConnection socketConnection = (PlayerSocketConnection) connection;
+            final SocketPlayerConnection socketConnection = (SocketPlayerConnection) connection;
 
             final byte[] publicKey = keyPair.getPublic().getEncoded();
             byte[] nonce = new byte[4];
@@ -83,8 +83,8 @@ public final class LoginListener {
             if (auth instanceof Auth.Bungee) {
                 // LEGACY FORWARDING
                 // Use game profile set during handshake
-                assert connection instanceof PlayerSocketConnection;
-                final GameProfile bungeeProfile = ((PlayerSocketConnection) connection).gameProfile();
+                assert connection instanceof SocketPlayerConnection;
+                final GameProfile bungeeProfile = ((SocketPlayerConnection) connection).gameProfile();
                 assert bungeeProfile != null;
                 gameProfile = new GameProfile(bungeeProfile.uuid(), packet.username(), bungeeProfile.properties());
             } else {
@@ -101,7 +101,7 @@ public final class LoginListener {
         }
 
         // Encryption is only support for socket connection¬
-        if (!(connection instanceof PlayerSocketConnection socketConnection)) return;
+        if (!(connection instanceof SocketPlayerConnection socketConnection)) return;
         final String loginUsername = socketConnection.getLoginUsername();
         if (loginUsername == null || loginUsername.isEmpty()) {
             // Shouldn't happen, but in case
@@ -155,7 +155,7 @@ public final class LoginListener {
         }
     }
 
-    private static void handleVelocityProxyResponse(PlayerSocketConnection socketConnection, LoginPlugin.Response response) {
+    private static void handleVelocityProxyResponse(SocketPlayerConnection socketConnection, LoginPlugin.Response response) {
         if (!(MinecraftServer.process().auth() instanceof Auth.Velocity velocity)) {
             socketConnection.kick(Component.text("Login plugin response is not supported in this auth mode", NamedTextColor.RED));
             return;
@@ -203,7 +203,7 @@ public final class LoginListener {
     }
 
     public static void loginAckListener(ClientLoginAcknowledgedPacket ignored, PlayerConnection connection) {
-        if (!(connection instanceof PlayerSocketConnection socketConnection))
+        if (!(connection instanceof SocketPlayerConnection socketConnection))
             throw new UnsupportedOperationException("Only socket");
         final GameProfile gameProfile = socketConnection.gameProfile();
         assert gameProfile != null;
@@ -232,7 +232,7 @@ public final class LoginListener {
         Thread.startVirtualThread(() -> {
             try {
                 var newGameProfile = MinecraftServer.getConnectionManager().transitionLoginToConfig(connection, gameProfile);
-                if (connection instanceof PlayerSocketConnection socketConnection) {
+                if (connection instanceof SocketPlayerConnection socketConnection) {
                     socketConnection.UNSAFE_setProfile(newGameProfile);
                 }
             } catch (Throwable t) {

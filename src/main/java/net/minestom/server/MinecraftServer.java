@@ -31,11 +31,13 @@ import net.minestom.server.listener.manager.PacketListenerManager;
 import net.minestom.server.message.ChatType;
 import net.minestom.server.monitoring.BenchmarkManager;
 import net.minestom.server.network.ConnectionManager;
+import net.minestom.server.network.protocol.ProtocolFamily;
+import net.minestom.server.network.protocol.ServerTransport;
+import net.minestom.server.network.protocol.TransportManager;
 import net.minestom.server.network.packet.PacketParser;
 import net.minestom.server.network.packet.client.ClientPacket;
 import net.minestom.server.network.packet.server.common.PluginMessagePacket;
 import net.minestom.server.network.packet.server.play.ServerDifficultyPacket;
-import net.minestom.server.network.socket.Server;
 import net.minestom.server.recipe.RecipeManager;
 import net.minestom.server.registry.DynamicRegistry;
 import net.minestom.server.scoreboard.TeamManager;
@@ -48,10 +50,12 @@ import net.minestom.server.world.DimensionType;
 import net.minestom.server.world.biome.Biome;
 import net.minestom.server.world.timeline.Timeline;
 import org.jetbrains.annotations.ApiStatus;
+import org.jetbrains.annotations.Nullable;
 import org.jetbrains.annotations.UnknownNullability;
 
 import java.net.InetSocketAddress;
 import java.net.SocketAddress;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * The main server class used to start the server and retrieve all the managers.
@@ -81,6 +85,8 @@ public final class MinecraftServer implements MinecraftConstants {
     private static int compressionThreshold = 256;
     private static String brandName = "Minestom";
     private static Difficulty difficulty = Difficulty.NORMAL;
+
+    private final AtomicBoolean runtimeStarted = new AtomicBoolean();
 
     public static MinecraftServer init(Auth auth) {
         updateProcess(auth);
@@ -365,22 +371,73 @@ public final class MinecraftServer implements MinecraftConstants {
         return serverProcess.enchantmentLocationEffects();
     }
 
-    public static Server getServer() {
+    public static @Nullable ServerTransport getServer() {
         return serverProcess.server();
     }
 
     /**
-     * Starts the server.
+     * Gets the manager responsible for protocol transports.
+     * <p>Use this to inspect, register or disable protocols before starting the server.</p>
+     */
+    public static TransportManager getTransportManager() {
+        return serverProcess.transports();
+    }
+
+    /**
+     * The Minecraft version implemented by this build, e.g. {@code 1.21.11}.
+     */
+    public static String versionName() {
+        return VERSION_NAME;
+    }
+
+    /**
+     * The Java Edition protocol version implemented by this build.
+     */
+    public static int protocolVersion() {
+        return PROTOCOL_VERSION;
+    }
+
+    /**
+     * Starts the server with a Java Edition transport.
      * <p>
      * It should be called after {@link #init()} and probably your own initialization code.
      *
-     * @param address the server address
-     * @throws IllegalStateException if called before {@link #init()} or if the server is already running
+     * @param address the address to bind
+     * @throws IllegalStateException if called before {@link #init()} or if a Java transport is already running
      */
     public void start(SocketAddress address) {
-        serverProcess.start(address);
-        serverProcess.dispatcher().start();
-        new TickSchedulerThread(serverProcess).start();
+        start(ProtocolFamily.JAVA, address);
+    }
+
+    /**
+     * Starts the server and binds a transport for the given protocol family.
+     * <p>Additional transports can be started after this call through
+     * {@link #getTransportManager()} or {@link #startTransport(ProtocolFamily, SocketAddress)}.</p>
+     *
+     * @param family  the protocol family to listen for
+     * @param address the address to bind
+     * @throws IllegalStateException if no provider is available for the family, or if the family is already running
+     */
+    public void start(ProtocolFamily family, SocketAddress address) {
+        serverProcess.start(family, address);
+        if (runtimeStarted.compareAndSet(false, true)) {
+            serverProcess.dispatcher().start();
+            new TickSchedulerThread(serverProcess).start();
+        }
+    }
+
+    /**
+     * Starts an additional protocol transport after the server is already running.
+     * <p>This can be used to serve Java Edition and Bedrock Edition clients from the same
+     * process:</p>
+     * <pre>{@code
+     * server.start("0.0.0.0", 25565);                              // Java, TCP
+     * server.startTransport(ProtocolFamily.BEDROCK, new InetSocketAddress(
+     *         "0.0.0.0", BedrockProtocol.NETHERNET_DISCOVERY_PORT)); // Bedrock, NetherNet
+     * }</pre>
+     */
+    public void startTransport(ProtocolFamily family, SocketAddress address) {
+        start(family, address);
     }
 
     public void start(String address, int port) {

@@ -12,7 +12,7 @@ import net.minestom.server.ServerFlag;
 import net.minestom.server.network.packet.client.handshake.ClientHandshakePacket;
 import net.minestom.server.network.player.GameProfile;
 import net.minestom.server.network.player.PlayerConnection;
-import net.minestom.server.network.player.PlayerSocketConnection;
+import net.minestom.server.network.player.SocketPlayerConnection;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -61,20 +61,20 @@ public final class HandshakeListener {
                 final Auth auth = MinecraftServer.process().auth();
 
                 // Bungee support (IP forwarding)
-                if (auth instanceof Auth.Bungee bungee && connection instanceof PlayerSocketConnection socketConnection) {
+                if (auth instanceof Auth.Bungee bungee && connection instanceof SocketPlayerConnection socketConnection) {
                     address = handleBungeeForwarding(address, socketConnection, bungee);
                 }
             default:
                 break;
         }
 
-        if (connection instanceof PlayerSocketConnection socketConnection) {
+        if (connection instanceof SocketPlayerConnection socketConnection) {
             socketConnection.refreshServerInformation(address, packet.serverPort(), packet.protocolVersion());
         }
     }
 
     private static String handleBungeeForwarding(String address,
-                                                 PlayerSocketConnection socketConnection,
+                                                 SocketPlayerConnection socketConnection,
                                                  Auth.Bungee bungee) {
         final String[] split = address.split("\00");
 

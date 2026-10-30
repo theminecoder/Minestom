@@ -3,6 +3,7 @@ package net.minestom.server.extras.query.response;
 import net.minestom.server.MinecraftServer;
 import net.minestom.server.network.NetworkBuffer;
 import net.minestom.server.network.NetworkBufferTemplate;
+import net.minestom.server.network.protocol.ServerTransport;
 
 import java.util.Objects;
 
@@ -26,9 +27,19 @@ public record BasicQueryResponse(String motd, String gameType,
                 "world",
                 String.valueOf(MinecraftServer.getConnectionManager().getOnlinePlayerCount()),
                 "9999",
-                (short) MinecraftServer.getServer().getPort(),
-                Objects.requireNonNullElse(MinecraftServer.getServer().getAddress(), "")
+                (short) defaultPort(),
+                defaultAddress()
         );
+    }
+
+    private static int defaultPort() {
+        final ServerTransport server = MinecraftServer.getServer();
+        return server != null ? server.getPort() : 0;
+    }
+
+    private static String defaultAddress() {
+        final ServerTransport server = MinecraftServer.getServer();
+        return Objects.requireNonNullElse(server != null ? server.getAddress() : null, "");
     }
 
     public static final NetworkBuffer.Type<BasicQueryResponse> SERIALIZER = NetworkBufferTemplate.template(

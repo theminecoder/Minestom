@@ -43,7 +43,13 @@ repositories {
 
 dependencies {
     implementation("net.minestom:minestom:<latest release>")
-    
+
+    // Protocol modules provide the network listeners.
+    // For Java Edition support:
+    implementation("net.minestom:protocol-java:<latest release>")
+    // For Bedrock Edition support (NetherNet):
+    // implementation("net.minestom:protocol-bedrock:<latest release>")
+
     // If you want to use the integration testing library.
     testImplementation("net.minestom:testing:<latest release>")
 }
@@ -59,6 +65,8 @@ repositories {
         content { // This filtering is optional, but recommended
             includeModule("net.minestom", "minestom")
             includeModule("net.minestom", "testing")
+            includeModule("net.minestom", "protocol-java")
+            includeModule("net.minestom", "protocol-bedrock")
         }
     }
     mavenCentral()
@@ -66,6 +74,7 @@ repositories {
 
 dependencies {
     implementation("net.minestom:minestom:<branch>-SNAPSHOT")
+    implementation("net.minestom:protocol-java:<branch>-SNAPSHOT")
     testImplementation("net.minestom:testing:<branch>-SNAPSHOT")
 }
 ```
@@ -88,6 +97,8 @@ To pin the snapshot version to a specific release you can reference the exact bu
 # Usage
 An example of how to use the Minestom library is available [here](/demo).
 Alternatively you can check the official [wiki](https://wiki.minestom.net/) or the [javadocs](https://minestom.github.io/Minestom/).
+
+Networking is split into protocol modules; see [docs/networking.md](docs/networking.md) for Java Edition and Bedrock Edition setup, version-specific features, and the NetherNet transport.
 
 # Why Minestom?
 Minecraft has evolved a lot since its release, most of the servers today do not take advantage of vanilla features and even have to struggle because of them.

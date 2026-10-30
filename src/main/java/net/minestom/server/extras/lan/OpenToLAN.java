@@ -3,6 +3,7 @@ package net.minestom.server.extras.lan;
 import net.minestom.server.MinecraftServer;
 import net.minestom.server.event.EventDispatcher;
 import net.minestom.server.event.server.ServerListPingEvent;
+import net.minestom.server.network.protocol.ServerTransport;
 import net.minestom.server.timer.Task;
 import net.minestom.server.utils.time.Cooldown;
 import org.slf4j.Logger;
@@ -103,7 +104,8 @@ public class OpenToLAN {
     private static void ping() {
         Thread.startVirtualThread(() -> {
             try {
-                if (!MinecraftServer.getServer().isOpen()) return;
+                final ServerTransport server = MinecraftServer.getServer();
+                if (server == null || !server.isOpen()) return;
                 if (packet == null || eventCooldown.isReady(System.nanoTime())) {
                     final ServerListPingEvent event = new ServerListPingEvent(OPEN_TO_LAN);
                     EventDispatcher.call(event);

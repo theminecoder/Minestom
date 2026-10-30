@@ -20,6 +20,8 @@ module net.minestom.server {
     requires java.desktop;
     requires java.management;
 
+    uses net.minestom.server.network.protocol.TransportProvider;
+
     // EXPORTS
     exports net.minestom.server;
     exports net.minestom.server.advancements;
@@ -145,7 +147,7 @@ module net.minestom.server {
     exports net.minestom.server.network.packet.server.status;
     exports net.minestom.server.network.player;
     exports net.minestom.server.network.plugin;
-    exports net.minestom.server.network.socket;
+    exports net.minestom.server.network.protocol;
     exports net.minestom.server.particle;
     exports net.minestom.server.ping;
     exports net.minestom.server.potion;

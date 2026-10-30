@@ -1,13 +1,17 @@
-package net.minestom.server.network.socket;
+package net.minestom.server.protocol.java;
 
 import net.minestom.server.MinecraftServer;
 import net.minestom.server.ServerFlag;
 import net.minestom.server.network.packet.PacketParser;
 import net.minestom.server.network.packet.PacketVanilla;
 import net.minestom.server.network.packet.client.ClientPacket;
-import net.minestom.server.network.player.PlayerSocketConnection;
+import net.minestom.server.network.protocol.ProtocolFamily;
+import net.minestom.server.network.protocol.ProtocolVersion;
+import net.minestom.server.network.protocol.ServerTransport;
 import net.minestom.server.utils.validate.Check;
 import org.jetbrains.annotations.ApiStatus;
+import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 
 import java.io.EOFException;
 import java.io.IOException;
@@ -19,7 +23,14 @@ import java.nio.channels.SocketChannel;
 import java.nio.file.Files;
 import java.util.concurrent.atomic.AtomicReference;
 
-public final class Server {
+/**
+ * The Java Edition TCP transport.
+ * <p>
+ * Accepts connections on a {@link ServerSocketChannel}, then runs a virtual read thread and
+ * a virtual write thread per client. Packet framing, encryption and compression are handled
+ * by {@link JavaPlayerConnection}.
+ */
+public final class JavaServerTransport implements ServerTransport {
     private volatile boolean stop;
 
     private final PacketParser<ClientPacket> packetParser;
@@ -29,34 +40,53 @@ public final class Server {
     private String address;
     private int port;
 
-    public Server(PacketParser<ClientPacket> packetParser) {
-        this.packetParser = packetParser;
-    }
-
-    public Server() {
+    public JavaServerTransport() {
         this(PacketVanilla.CLIENT_PACKET_PARSER);
     }
 
-    @ApiStatus.Internal
-    public void init(SocketAddress address) throws IOException {
-        ProtocolFamily family;
+    public JavaServerTransport(@NotNull PacketParser<ClientPacket> packetParser) {
+        this.packetParser = packetParser;
+    }
+
+    @Override
+    public @NotNull ProtocolFamily family() {
+        return ProtocolFamily.JAVA;
+    }
+
+    @Override
+    public @NotNull ProtocolVersion protocolVersion() {
+        return JavaProtocol.VERSION;
+    }
+
+    @Override
+    public void bind(@NotNull SocketAddress address) throws IOException {
+        final java.net.ProtocolFamily socketFamily;
         switch (address) {
             case InetSocketAddress inetSocketAddress -> {
                 this.address = inetSocketAddress.getHostString();
                 this.port = inetSocketAddress.getPort();
-                family = inetSocketAddress.getAddress().getAddress().length == 4 ? StandardProtocolFamily.INET : StandardProtocolFamily.INET6;
+                final InetAddress resolved = inetSocketAddress.getAddress();
+                if (resolved == null) {
+                    throw new IOException("Unresolved address: " + inetSocketAddress);
+                }
+                socketFamily = resolved.getAddress().length == 4 ? StandardProtocolFamily.INET : StandardProtocolFamily.INET6;
             }
             case UnixDomainSocketAddress unixDomainSocketAddress -> {
                 this.address = "unix://" + unixDomainSocketAddress.getPath();
                 this.port = 0;
-                family = StandardProtocolFamily.UNIX;
+                socketFamily = StandardProtocolFamily.UNIX;
             }
             default ->
                     throw new IllegalArgumentException("Address must be an InetSocketAddress or a UnixDomainSocketAddress");
         }
 
-        ServerSocketChannel server = ServerSocketChannel.open(family);
-        server.bind(address);
+        ServerSocketChannel server = ServerSocketChannel.open(socketFamily);
+        try {
+            server.bind(address);
+        } catch (IOException e) {
+            server.close();
+            throw e;
+        }
         this.serverSocket = server;
         this.socketAddress = address;
 
@@ -65,27 +95,31 @@ public final class Server {
         }
     }
 
-    @ApiStatus.Internal
+    @Override
     public void start() {
+        Check.stateCondition(serverSocket == null, "Transport must be bound before it is started");
         // Use named thread builders for logging
-        var readBuilder = Thread.ofVirtual().name("Ms-Socket-Reader-", 0);
-        var writeBuilder = Thread.ofVirtual().name("Ms-Socket-Writer-", 0);
-        Thread.ofVirtual().name("Ms-Socket-Server").start(() -> {
+        var readBuilder = Thread.ofVirtual().name("Ms-Java-Socket-Reader-", 0);
+        var writeBuilder = Thread.ofVirtual().name("Ms-Java-Socket-Writer-", 0);
+        Thread.ofVirtual().name("Ms-Java-Socket-Server").start(() -> {
             while (!stop) {
                 try {
                     final SocketChannel client = serverSocket.accept();
                     configureSocket(client);
-                    AtomicReference<PlayerSocketConnection> reference = new AtomicReference<>(null);
+                    AtomicReference<JavaPlayerConnection> reference = new AtomicReference<>(null);
                     Thread readThread = readBuilder.unstarted(() -> playerReadLoop(reference.get()));
                     Thread writeThread = writeBuilder.unstarted(() -> playerWriteLoop(reference.get()));
-                    PlayerSocketConnection connection = new PlayerSocketConnection(client, client.getRemoteAddress(), readThread, writeThread);
+                    JavaPlayerConnection connection = new JavaPlayerConnection(client, client.getRemoteAddress(), readThread, writeThread);
                     reference.set(connection);
                     readThread.start();
                     writeThread.start();
                 } catch (AsynchronousCloseException ignored) {
                     // We are exiting, bye bye!
+                } catch (ClosedChannelException ignored) {
+                    break;
                 } catch (IOException e) {
-                    throw new RuntimeException(e);
+                    if (stop) break;
+                    MinecraftServer.getExceptionManager().handleException(e);
                 }
             }
         });
@@ -101,7 +135,7 @@ public final class Server {
         }
     }
 
-    private void playerReadLoop(PlayerSocketConnection connection) {
+    private void playerReadLoop(JavaPlayerConnection connection) {
         Check.notNull(connection, "connection cannot be null");
         while (!stop) {
             try {
@@ -113,7 +147,7 @@ public final class Server {
                 connection.disconnect();
                 break;
             } catch (Throwable e) {
-                boolean isExpected = e instanceof SocketException && e.getMessage().equals("Connection reset");
+                boolean isExpected = e instanceof SocketException && "Connection reset".equals(e.getMessage());
                 if (!isExpected) MinecraftServer.getExceptionManager().handleException(e);
                 connection.disconnect();
                 break;
@@ -121,7 +155,7 @@ public final class Server {
         }
     }
 
-    private void playerWriteLoop(PlayerSocketConnection connection) {
+    private void playerWriteLoop(JavaPlayerConnection connection) {
         Check.notNull(connection, "connection cannot be null");
         while (!stop) {
             try {
@@ -132,7 +166,7 @@ public final class Server {
                 connection.disconnect();
                 break;
             } catch (Throwable e) {
-                boolean isExpected = e instanceof IOException && e.getMessage().equals("Broken pipe");
+                boolean isExpected = e instanceof IOException && "Broken pipe".equals(e.getMessage());
                 if (!isExpected) MinecraftServer.getExceptionManager().handleException(e);
 
                 connection.disconnect();
@@ -151,10 +185,12 @@ public final class Server {
         }
     }
 
+    @Override
     public boolean isOpen() {
         return !stop;
     }
 
+    @Override
     public void stop() {
         this.stop = true;
         try {
@@ -170,20 +206,23 @@ public final class Server {
         }
     }
 
-    @ApiStatus.Internal
-    public PacketParser<ClientPacket> packetParser() {
-        return packetParser;
-    }
-
-    public SocketAddress socketAddress() {
+    @Override
+    public @Nullable SocketAddress socketAddress() {
         return socketAddress;
     }
 
-    public String getAddress() {
+    @Override
+    public @Nullable String getAddress() {
         return address;
     }
 
+    @Override
     public int getPort() {
         return port;
+    }
+
+    @ApiStatus.Internal
+    public @NotNull PacketParser<ClientPacket> packetParser() {
+        return packetParser;
     }
 }

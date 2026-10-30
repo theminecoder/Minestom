@@ -174,6 +174,9 @@ public class Main {
 
         minecraftServer.start("0.0.0.0", 25565);
 //        minecraftServer.start(java.net.UnixDomainSocketAddress.of("minestom-demo.sock"));
+        // Bedrock Edition (NetherNet) alongside Java; install a NetherNetPeerFactory first.
+//        minecraftServer.startTransport(net.minestom.server.network.protocol.ProtocolFamily.BEDROCK,
+//                new java.net.InetSocketAddress("0.0.0.0", net.minestom.server.protocol.bedrock.BedrockProtocol.NETHERNET_DISCOVERY_PORT));
         //Runtime.getRuntime().addShutdownHook(new Thread(MinecraftServer::stopCleanly));
     }
 }

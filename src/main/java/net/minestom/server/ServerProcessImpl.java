@@ -38,7 +38,9 @@ import net.minestom.server.network.ConnectionManager;
 import net.minestom.server.network.packet.PacketParser;
 import net.minestom.server.network.packet.PacketVanilla;
 import net.minestom.server.network.packet.client.ClientPacket;
-import net.minestom.server.network.socket.Server;
+import net.minestom.server.network.protocol.ProtocolFamily;
+import net.minestom.server.network.protocol.ServerTransport;
+import net.minestom.server.network.protocol.TransportManager;
 import net.minestom.server.recipe.RecipeManager;
 import net.minestom.server.registry.DynamicRegistry;
 import net.minestom.server.scoreboard.TeamManager;
@@ -53,6 +55,7 @@ import net.minestom.server.utils.time.Tick;
 import net.minestom.server.world.DimensionType;
 import net.minestom.server.world.biome.Biome;
 import net.minestom.server.world.timeline.Timeline;
+import org.jetbrains.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -113,14 +116,13 @@ final class ServerProcessImpl implements ServerProcess {
     private final BossBarManager bossBar;
     private final ClickCallbackManager clickCallbackManager;
 
-    private final Server server;
+    private final TransportManager transports;
 
     private final ThreadDispatcher<Chunk, Entity> dispatcher;
     private final Ticker ticker;
 
     private final AtomicBoolean started = new AtomicBoolean();
     private final AtomicBoolean stopped = new AtomicBoolean();
-
     public ServerProcessImpl(Auth auth) {
         this.auth = auth;
         this.exception = new ExceptionManager();
@@ -170,8 +172,7 @@ final class ServerProcessImpl implements ServerProcess {
         this.bossBar = new BossBarManager();
         this.clickCallbackManager = new ClickCallbackManager();
 
-        this.server = new Server(packetParser);
-
+        this.transports = new TransportManager();
         this.dispatcher = ThreadDispatcher.dispatcher(ThreadProvider.counter(), ServerFlag.DISPATCHER_THREADS);
         this.ticker = new TickerImpl();
     }
@@ -377,8 +378,13 @@ final class ServerProcessImpl implements ServerProcess {
     }
 
     @Override
-    public Server server() {
-        return server;
+    public @Nullable ServerTransport server() {
+        return transports.primary();
+    }
+
+    @Override
+    public TransportManager transports() {
+        return transports;
     }
 
     @Override
@@ -398,41 +404,48 @@ final class ServerProcessImpl implements ServerProcess {
 
     @Override
     public void start(SocketAddress socketAddress) {
-        if (!started.compareAndSet(false, true)) {
-            throw new IllegalStateException("Server already started");
-        }
+        start(ProtocolFamily.JAVA, socketAddress);
+    }
 
+    @Override
+    public void start(ProtocolFamily family, SocketAddress socketAddress) {
+        if (stopped.get()) throw new IllegalStateException("Server already stopped");
+        if (transports.transport(family).isPresent()) {
+            throw new IllegalStateException("A transport is already running for protocol family '" + family.id() + "'");
+        }
+        final boolean first = started.compareAndSet(false, true);
         final String brand = MinecraftServer.getBrandName();
-        LOGGER.info("Starting {} ({}) server.", brand, Git.version());
-        switch (auth) {
-            case Auth.Offline ignored ->
-                    LOGGER.info("Running in offline mode. Beware that this is not secure and players can impersonate each other.");
-            case Auth.Online ignored -> LOGGER.info("Running in online mode with Mojang's authentication.");
-            case Auth.Velocity ignored -> LOGGER.info("Running in Velocity mode with modern IP forwarding.");
-            case Auth.Bungee bungee -> {
-                if (bungee.guard()) {
-                    LOGGER.info("Running in BungeeCord mode, using legacy IP forwarding with Guard enabled.");
-                } else {
-                    LOGGER.info("Running in BungeeCord mode without BungeeGuard. Be sure to configure your firewall to prevent direct connections.");
+        if (first) {
+            LOGGER.info("Starting {} ({}) server.", brand, Git.version());
+            switch (auth) {
+                case Auth.Offline ignored ->
+                        LOGGER.info("Running in offline mode. Beware that this is not secure and players can impersonate each other.");
+                case Auth.Online ignored -> LOGGER.info("Running in online mode with Mojang's authentication.");
+                case Auth.Velocity ignored -> LOGGER.info("Running in Velocity mode with modern IP forwarding.");
+                case Auth.Bungee bungee -> {
+                    if (bungee.guard()) {
+                        LOGGER.info("Running in BungeeCord mode, using legacy IP forwarding with Guard enabled.");
+                    } else {
+                        LOGGER.info("Running in BungeeCord mode without BungeeGuard. Be sure to configure your firewall to prevent direct connections.");
+                    }
                 }
             }
         }
 
-        // Init server
+        // Bind and start the requested transport.
         try {
-            server.init(socketAddress);
+            transports.start(family, socketAddress);
         } catch (IOException e) {
             exception.handleException(e);
             throw new RuntimeException(e);
         }
 
-        // Start server
-        server.start();
+        if (first) {
+            LOGGER.info("{} server started successfully.", brand);
 
-        LOGGER.info("{} server started successfully.", brand);
-
-        // Stop the server on SIGINT
-        if (ServerFlag.SHUTDOWN_ON_SIGNAL) Runtime.getRuntime().addShutdownHook(new Thread(this::stop));
+            // Stop the server on SIGINT
+            if (ServerFlag.SHUTDOWN_ON_SIGNAL) Runtime.getRuntime().addShutdownHook(new Thread(this::stop));
+        }
     }
 
     @Override
@@ -442,7 +455,7 @@ final class ServerProcessImpl implements ServerProcess {
         LOGGER.info("Stopping {} server.", brand);
         scheduler.shutdown();
         connection.shutdown();
-        server.stop();
+        transports.stopAll();
         LOGGER.info("Shutting down all thread pools.");
         benchmark.disable();
         dispatcher.shutdown();
